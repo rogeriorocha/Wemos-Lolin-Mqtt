@@ -11,10 +11,13 @@
 /////////////////////////////////////////
 // CHANGE TO MATCH YOUR CONFIGURATION  //
 /////////////////////////////////////////
-#define WIFI_SSID "my_wifi"
-#define WIFI_PASS "my_password"
+#define WIFI_SSID "Rogerio Rocha"
+#define WIFI_PASS "ROGERROCHA"
 
-#define BROKER "192.168.0.1"
+//#define WIFI_SSID "iPhone de Rogerio"
+//#define WIFI_PASS "galodoido"
+
+#define BROKER "leguedex.duckdns.org"
 #define BROKER_PORT 1883
 #define MQTT_USER "my_mqtt_user"
 #define MQTT_PASS "my_mqtt_password"
@@ -23,7 +26,7 @@
 #define TOPIC "display/wemos/0"
 #define ALIGN_TOPIC TOPIC "/align_right"
 
-#define SHOULD_FLIP_SCREEN false // flips the screen vertically
+#define SHOULD_FLIP_SCREEN true // flips the screen vertically
 #define INVERT_COLORS false // if true: white background with black text
 
 #define BUTTON_PIN 0 // comment out if you don't have a button
@@ -57,13 +60,22 @@ struct DisplayData {
   int line3Size;
 };
 
+struct WifiConn {
+  const char* name;
+  const char* password;
+};
+
+WifiConn wifiConn[] = {{"Rogerio Rocha", "ROGERROCHA"},
+                      {"iPhone de Rogerio", "galodoido"}
+                      };
+
 SSD1306  display(0x3c, 5, 4);
 WiFiClient wclient;
 PubSubClient clientMQTT(wclient);
 
 // Functions
 void motionSensorTriggered();
-void reconnect();
+void MQTT_reconnect();
 
 DisplayData displayData = {"--", "--", "--", 10, 16, 24};
 volatile boolean shouldUpdateUI = false;
@@ -84,7 +96,7 @@ void callback(char* topic, byte* payload, unsigned int length) {
   Serial.print("] ");
   Serial.println();
 
-  char charPayload[length+1];
+  char charPayload[length + 1];
   Serial.print("payload: ");
   for (int i = 0; i < length; i++) {
     charPayload[i] = (char)payload[i];
@@ -133,24 +145,60 @@ void setup() {
   display.setTextAlignment(TEXT_ALIGN_LEFT);
   display.setFont(Roboto_Condensed_16);
 
+  int iWifiConn = 0;
+
   // We start by connecting to a WiFi network
   WiFi.mode(WIFI_STA);
-  WiFi.begin(WIFI_SSID, WIFI_PASS);
-
+  // WiFi.begin(WIFI_SSID, WIFI_PASS);
+  WiFi.begin(wifiConn[iWifiConn].name, wifiConn[iWifiConn].password);
+  
   Serial.println();
   Serial.println();
-  display.clear();
-  display.drawString(0, 0, "Waiting for WiFi...");
+  /*display.clear();
+  display.drawString(0, 0, "Waiting to WiFi");
+  display.drawString(0, 16, String(WIFI_SSID));
+  display.drawString(0, 32, "");
   display.display();
-  Serial.print("Waiting for WiFi...");
+  Serial.print("Waiting for Wifi...");
+  */
+
+  int x = 0;
+  /* 
+  for(int i = 0; i < 2; ++i) {
+    display.clear();
+    display.drawString(0, 0, String(i));
+    display.drawString(0, 16, wifiConn[i].name);
+    display.drawString(0, 32, wifiConn[i].password);
+    display.display();
+    delay(5000);       
+  }
+  */
 
   while (WiFi.status() != WL_CONNECTED) {
+    WiFi.begin(wifiConn[iWifiConn].name, wifiConn[iWifiConn].password);
+    
+    display.clear();
+    display.drawString(0, 0, "Waiting for Wifi... " + String(++x));
+    display.drawString(0, 16, String(iWifiConn));
+    display.drawString(0, 32, wifiConn[iWifiConn].name);
+    display.display();
+    
+    WiFi.reconnect();
     Serial.print(".");
-    delay(500);
+    
+    delay(1000);
+
+    
+    delay(5000);
+    iWifiConn++;
+    if (iWifiConn > 1){
+      iWifiConn = 0;
+    }
   }
 
   Serial.println("");
   Serial.println("WiFi connected");
+  delay(500);
   display.clear();
   display.drawString(0, 0, "WiFi connected");
   display.drawString(0, 16, "IP address: ");
@@ -166,40 +214,40 @@ void setup() {
   clientMQTT.setCallback(callback);
   clientMQTT.setBufferSize(MQTT_PACKET_SIZE);
   display.clear();
-  display.drawString(0, 0, "Connecting to broker...");
+  display.drawString(0, 0, "Conn to broker...");
   display.display();
-  reconnect();
+  MQTT_reconnect();
   display.drawString(0, 16, "Connected!");
   display.drawString(0, 32, "Waiting for messages...");
   display.display();
   Serial.println("Waiting for messages...");
 
-  #ifdef SENSOR_PIN
+#ifdef SENSOR_PIN
   pinMode(SENSOR_PIN, INPUT);
   attachInterrupt(SENSOR_PIN, motionSensorTriggered, CHANGE);
 
   motionSensorLastTriggeredInMicros = micros();
-  #endif
+#endif
 
 }
 
 void loop() {
   if (!clientMQTT.connected()) {
-    reconnect();
+    MQTT_reconnect();
   }
   clientMQTT.loop();
 
-  #ifdef BUTTON_PIN
+#ifdef BUTTON_PIN
   buttonEvent.loop();
-  #endif
+#endif
 
-  #ifdef SENSOR_PIN
+#ifdef SENSOR_PIN
   long sensorTriggerAgo = (long)(micros() - motionSensorLastTriggeredInMicros);
   if (sensorIsOff && sensorTriggerAgo > (SECONDS_TO_TURN_OFF * 1000000)) {
     display.displayOff();
     return;
   }
-  #endif
+#endif
 
   display.displayOn();
 
@@ -261,22 +309,22 @@ int lastPageNumer() {
 int parseSize(int intendedSize) {
   switch (intendedSize) {
     case 10:
-    return 10;
+      return 10;
     case 24:
-    return 24;
+      return 24;
     default:
-    return 16;
+      return 16;
   }
 }
 
 const unsigned char* getFontForSize(int fontSize) {
   switch (fontSize) {
     case 10:
-    return Roboto_Condensed_10;
+      return Roboto_Condensed_10;
     case 24:
-    return Roboto_Condensed_24;
+      return Roboto_Condensed_24;
     default:
-    return Roboto_Condensed_16;
+      return Roboto_Condensed_16;
   }
 }
 
@@ -313,7 +361,7 @@ void motionSensorTriggered() {
 }
 #endif
 
-void reconnect() {
+void MQTT_reconnect() {
   // Loop until we're reconnected
   while (!clientMQTT.connected()) {
     Serial.print("Attempting MQTT connection...");
